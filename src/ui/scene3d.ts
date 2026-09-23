@@ -189,14 +189,3 @@ export function render3d(
     return { ok: false, reason: String(err) };
   }
 }
-
-/** 처음 한 번만 WebGL 가능 여부를 본다. */
-export function webGLAvailable(): boolean {
-  try {
-    const c = document.createElement("canvas");
-    const gl = c.getContext("webgl") || c.getContext("experimental-webgl");
-    return !!gl;
-  } catch {
-    return false;
-  }
-}

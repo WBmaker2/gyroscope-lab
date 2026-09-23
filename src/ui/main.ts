@@ -4,7 +4,7 @@
 // 캔버스 텍스트 대안(수치표·그래프 요약)·reduced-motion 정적 테두리·터치 44px(CSS).
 
 import { runSimulation, ENGINE_VERSION, SCENARIO_VERSION } from "../physics/runner";
-import { $ } from "./dom";
+import { $ , webGLAvailable } from "./dom";
 import { readParams, syncRangeInputs, pairNumericRange, validateToUI, PARAM_KEYS } from "./paramform";
 import { renderDataTable, renderInitialTable } from "./datatable";
 import {
@@ -27,7 +27,20 @@ import {
 } from "./playback";
 import { drawSim, type SimFlags } from "./sim2d";
 import { drawTimeGraph as renderTimeGraph } from "./timegraph";
-import { render3d, webGLAvailable, type CameraView } from "./scene3d";
+import type { CameraView } from "./scene3d";
+
+/** 3D 모듈은 처음 누를 때만 내려받는다. 2D만 쓰면 three.js를 받지 않는다. */
+let scene3dMod: typeof import("./scene3d") | null = null;
+
+async function ensureScene3d(): Promise<boolean> {
+  if (scene3dMod) return true;
+  try {
+    scene3dMod = await import("./scene3d");
+    return true;
+  } catch {
+    return false;
+  }
+}
 import { renderCompareCard, saveCompareSlot } from "./compare";
 import {
   appendRecord,
@@ -92,11 +105,11 @@ function readFlags(): SimFlags {
 
 function draw() {
   const rs = getRenderState();
-  if (getView() === "3d" && !webglDead) {
+  if (getView() === "3d" && !webglDead && scene3dMod) {
     canvas.hidden = true;
     canvas3d.hidden = false;
     ($("webgl-note") as HTMLElement).hidden = true;
-    const r = render3d(
+    const r = scene3dMod.render3d(
       canvas3d,
       cameraView,
       rs?.result ?? null,
@@ -283,6 +296,40 @@ function showNumericalError(title: string, detail: string) {
   refresh();
 }
 
+/** 보기 버튼 동작. 3D 모듈은 처음 누를 때 내려받는다. */
+async function onViewButton(b: HTMLButtonElement): Promise<void> {
+  const v = b.dataset.view as "front" | "top" | "side" | "3d";
+  if (v === "3d") {
+    if (getView() === "3d") {
+      // 3D를 다시 누르면 2D 정면으로 돌아온다.
+      setView("front");
+      cameraView = "front";
+    } else if (webglDead || !webGLAvailable()) {
+      // 3D 불가: 2D 정면에 머물고 이유를 알린다.
+      webglDead = true;
+      setView("front");
+      ($("webgl-note") as HTMLElement).hidden = false;
+    } else {
+      $("status-text").textContent = "3D 준비 중…";
+      const ok = await ensureScene3d();
+      if (!ok) {
+        webglDead = true;
+        setView("front");
+        ($("webgl-note") as HTMLElement).hidden = false;
+      } else {
+        setView("3d");
+      }
+    }
+  } else if (getView() === "3d") {
+    // 3D에서는 정면·위·옆이 카메라 위치가 된다. 자동 회전은 없다.
+    cameraView = v;
+  } else {
+    setView(v);
+  }
+  syncViewButtons();
+  draw();
+}
+
 function init() {
   records = loadRecords();
 
@@ -302,28 +349,7 @@ function init() {
 
   document.querySelectorAll<HTMLButtonElement>(".segmented [data-view]").forEach((b) => {
     b.addEventListener("click", () => {
-      const v = b.dataset.view as "front" | "top" | "side" | "3d";
-      if (v === "3d") {
-        if (getView() === "3d") {
-          // 3D를 다시 누르면 2D 정면으로 돌아온다.
-          setView("front");
-          cameraView = "front";
-        } else if (webglDead || !webGLAvailable()) {
-          // 3D 불가: 2D 정면에 머물고 이유를 알린다.
-          webglDead = true;
-          setView("front");
-          ($("webgl-note") as HTMLElement).hidden = false;
-        } else {
-          setView("3d");
-        }
-      } else if (getView() === "3d") {
-        // 3D에서는 정면·위·옆이 카메라 위치가 된다. 자동 회전은 없다.
-        cameraView = v;
-      } else {
-        setView(v);
-      }
-      syncViewButtons();
-      draw();
+      void onViewButton(b);
     });
   });
   for (const id of ["v-L", "v-tau", "v-g", "v-trail"]) {

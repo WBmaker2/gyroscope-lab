@@ -5,7 +5,7 @@
 
 - 공개 주소: https://wbmaker2.github.io/gyroscope-lab/
 - 설계: `10-gyroscope-lab.md`, 공통 원칙: `00-shared-design-principles.md`
-- 상태: P0 + 3D 보기(M4) + P1 별도 모델 완성, 배포 전 점검 마침 (`docs/PRE-DEPLOY-CHECK.md`)
+- 상태: P0 + 3D 보기(M4) + P1 별도 모델 완성, 점검 마침 (`docs/PRE-DEPLOY-CHECK.md`)
 - `main`에 올리면 자동으로 검사·빌드·게시된다 (`.github/workflows/deploy.yml`).
 
 ## 바로 시작하기
