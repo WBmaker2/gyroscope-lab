@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>넘어지지 않는 팽이 연구소 — 회전 바퀴 세차 실험</title>
+  <meta name="description" content="기울어진 회전 바퀴의 세차를 예측·실행·비교·기록하는 중고등 물리 실험 (고정점 축대칭 강체, P0)" />
+  <link rel="stylesheet" href="/src/styles/tokens.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">본문으로 건너뛰기</a>
+  <div class="page">
+    <header class="site-header">
+      <div>
+        <p class="kicker">10 · 넘어지지 않는 팽이 연구소 · 중고등 물리 25분</p>
+        <h1>회전하는 바퀴에 힘을 가하면 왜 예상과 다른 방향으로 움직일까?</h1>
+      </div>
+      <div class="header-actions">
+        <button class="btn ghost" id="open-log" type="button">업데이트 내역</button>
+      </div>
+    </header>
+
+    <main id="main">
+      <!-- 1. 예측 -->
+      <section class="block" aria-labelledby="h-predict">
+        <h2 id="h-predict">예측 <span class="folio">01 · 3분</span></h2>
+        <p class="lead">기울어진 회전 바퀴의 다음 움직임을 먼저 고르세요. 답을 맞히는 활동이 아니라, 조건을 바꿨을 때 설명이 바뀌는지 확인하는 기록입니다.</p>
+        <div class="card">
+          <fieldset id="predict-set">
+            <legend><strong>다음 움직임 예측 (하나 선택)</strong></legend>
+            <div class="check-row" role="radiogroup" aria-label="다음 움직임 예측">
+              <label><input type="radio" name="prediction" value="same" /> 기울인 방향으로 바로 넘어진다</label>
+              <label><input type="radio" name="prediction" value="side" /> 옆으로 돌면서 세차한다</label>
+              <label><input type="radio" name="prediction" value="stay" /> 회전이 빨라서 거의 그대로 버틴다</label>
+            </div>
+          </fieldset>
+          <div class="btn-row">
+            <button class="btn primary gi-pulse" id="btn-start-top" type="button">실험 시작</button>
+          </div>
+        </div>
+      </section>
+
+      <hr class="grid-rule" />
+
+      <!-- 2. 실험 -->
+      <section class="block" aria-labelledby="h-lab">
+        <h2 id="h-lab">실험 <span class="folio">02 · 관찰</span></h2>
+        <p class="lead">질량 1kg·무게중심 0.1m 고정점 강체. 중력 토크와 각운동량 벡터를 켜고 한 단계씩 진행할 수 있습니다. 모든 드래그는 숫자 입력·슬라이더·버튼·방향키로 대신합니다.</p>
+        <div class="lab-grid">
+          <div class="card">
+            <h3>팽이 관찰</h3>
+            <div class="segmented" role="group" aria-label="보기 방향">
+              <button type="button" data-view="front" aria-pressed="true">정면</button>
+              <button type="button" data-view="top" aria-pressed="false">위</button>
+              <button type="button" data-view="side" aria-pressed="false">옆</button>
+              <button type="button" data-view="3d" aria-pressed="false">3D</button>
+            </div>
+            <p style="margin:8px 0 0"><canvas class="sim" id="sim" width="640" height="480" role="img" aria-label="팽이 시뮬레이션 그림. 축 방향과 벡터는 아래 수치표와 같습니다."></canvas></p>
+            <p style="margin:8px 0 0"><canvas class="sim" id="sim3d" width="640" height="480" role="img" aria-label="팽이 3D 보기. 축 방향과 벡터는 아래 수치표와 같습니다." hidden></canvas></p>
+            <p class="hint" id="webgl-note" hidden>이 브라우저에서는 3D가 되지 않아 2D로 보여줍니다. 수치표와 시간 그래프는 같습니다.</p>
+            <p class="legend" aria-hidden="true">
+              <span><i class="sw thin"></i>축</span>
+              <span><i class="sw solid-l"></i>각운동량 L (실선)</span>
+              <span><i class="sw dashed"></i>토크 τ (파선)</span>
+              <span><i class="sw dotted"></i>중력 mg (점선)</span>
+            </p>
+            <div class="status-line" id="status" data-state="ready" aria-live="polite">
+              <span class="badge" id="status-badge">준비</span>
+              <span id="status-text" class="nums">조건을 정하고 시작을 누르세요.</span>
+            </div>
+            <div class="btn-row">
+              <button class="btn primary gi-pulse" id="btn-run" type="button">실행</button>
+              <button class="btn" id="btn-pause" type="button" disabled>정지</button>
+              <button class="btn" id="btn-step" type="button">한 단계</button>
+              <button class="btn ghost" id="btn-reset" type="button">시점 복귀</button>
+            </div>
+            <div id="error-box"></div>
+            <h3 style="margin-top:16px">수치표 (그림의 텍스트 대안)</h3>
+            <table class="data" id="data-table">
+              <thead><tr><th scope="col">항목</th><th scope="col">값</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">시간 t</th><td class="nums" id="d-t">0.00 s</td></tr>
+                <tr><th scope="row">축 방향 (x, y, z)</th><td class="nums" id="d-axis">—</td></tr>
+                <tr><th scope="row">각운동량 L (kg·m²/s)</th><td class="nums" id="d-L">—</td></tr>
+                <tr><th scope="row">토크 τ (N·m)</th><td class="nums" id="d-tau">—</td></tr>
+                <tr><th scope="row">에너지 E (J) · 드리프트</th><td class="nums" id="d-E">—</td></tr>
+                <tr><th scope="row">근사 세차 Ω≈mgl/(Iω)</th><td class="nums" id="d-approx">—</td></tr>
+                <tr><th scope="row">측정 세차 (후반 평균)</th><td class="nums" id="d-meas">—</td></tr>
+              </tbody>
+            </table>
+            <h3 style="margin-top:16px">시간 그래프 (축 높이 z · 에너지)</h3>
+            <p><canvas class="timegraph" id="timegraph" width="640" height="180" role="img" aria-label="시간에 따른 축 높이와 에너지 그래프. 실행 전에는 비어 있습니다."></canvas></p>
+            <p class="hint" id="timegraph-alt">실행하면 축 높이 z(t)와 에너지 E(t)가 그려집니다. 같은 값은 위 수치표에서도 볼 수 있습니다.</p>
+          </div>
+
+          <div class="card neutral">
+            <h3>조건 설정</h3>
+            <form id="params" novalidate>
+              <div class="field">
+                <label for="in-mass">질량 m (kg)</label>
+                <div class="row">
+                  <input type="number" id="in-mass" min="0.5" max="2" step="0.1" value="1" />
+                  <input type="range" id="rg-mass" min="0.5" max="2" step="0.1" value="1" aria-label="질량 슬라이더" />
+                </div>
+                <p class="hint">유효 범위 0.5~2 kg. 기본 1 kg.</p>
+                <p class="error" id="e-mass" hidden></p>
+              </div>
+              <div class="field">
+                <label for="in-dist">무게중심 거리 l (m)</label>
+                <div class="row">
+                  <input type="number" id="in-dist" min="0.05" max="0.2" step="0.01" value="0.1" />
+                  <input type="range" id="rg-dist" min="0.05" max="0.2" step="0.01" value="0.1" aria-label="무게중심 거리 슬라이더" />
+                </div>
+                <p class="hint">유효 범위 0.05~0.2 m. 기본 0.1 m.</p>
+                <p class="error" id="e-dist" hidden></p>
+              </div>
+              <div class="field">
+                <label for="in-spin">축 각속도 ω (rad/s)</label>
+                <div class="row">
+                  <input type="number" id="in-spin" min="20" max="120" step="1" value="100" />
+                  <input type="range" id="rg-spin" min="20" max="120" step="1" value="100" aria-label="축 각속도 슬라이더" />
+                </div>
+                <p class="hint">유효 범위 20~120 rad/s. <span class="nums" id="rpm-hint">≈ 955 RPM</span>. 예: 100 rad/s → 근사 Ω≈0.981 rad/s.</p>
+                <p class="error" id="e-spin" hidden></p>
+              </div>
+              <div class="field">
+                <label for="in-tilt">초기 기울기 (°)</label>
+                <div class="row">
+                  <input type="number" id="in-tilt" min="5" max="35" step="1" value="15" />
+                  <input type="range" id="rg-tilt" min="5" max="35" step="1" value="15" aria-label="초기 기울기 슬라이더" />
+                </div>
+                <p class="hint">유효 범위 5~35°. 축이 60°를 넘으면 종료됩니다. 지면 접촉은 P0에서 계산하지 않습니다.</p>
+                <p class="error" id="e-tilt" hidden></p>
+              </div>
+              <p class="hint">시간 간격 Δt = 1/2000 s 고정 (RK4). 실행 시간 10 s. 관성 I⊥=0.02, I축=0.01 kg·m².</p>
+            </form>
+            <fieldset class="vectors" id="p1-set">
+              <legend>P1 확장 (별도 모델, 기본 끄기)</legend>
+              <div class="check-row">
+                <label><input type="checkbox" id="p1-damping" /> 약한 감쇠 켜기</label>
+                <label><input type="checkbox" id="p1-contact" /> 지면 접촉 감지 켜기</label>
+              </div>
+              <div class="field">
+                <label for="in-pradius">바퀴 반지름 R (m, 가정값)</label>
+                <div class="row">
+                  <input type="number" id="in-pradius" min="0.02" max="0.15" step="0.01" value="0.06" disabled />
+                  <input type="range" id="rg-pradius" min="0.02" max="0.15" step="0.01" value="0.06" aria-label="바퀴 반지름 슬라이더" disabled />
+                </div>
+              </div>
+              <div class="field">
+                <label for="in-pheight">지지점 높이 h (m, 가정값)</label>
+                <div class="row">
+                  <input type="number" id="in-pheight" min="0.02" max="0.3" step="0.01" value="0.15" disabled />
+                  <input type="range" id="rg-pheight" min="0.02" max="0.3" step="0.01" value="0.15" aria-label="지지점 높이 슬라이더" disabled />
+                </div>
+              </div>
+              <p class="hint">감쇠 계수는 c=0.0001 고정이다. 감쇠를 켜면 에너지가 조금씩 줄어서 드리프트 0.5% 목표는 적용하지 않는다. 접촉은 바퀴가 바닥에 닿는 순간 끝내며, 닿은 뒤 움직임은 계산하지 않는다.</p>
+              <p class="error" id="e-p1" hidden></p>
+            </fieldset>
+            <fieldset class="vectors">
+              <legend>벡터 표시</legend>
+              <div class="check-row">
+                <label><input type="checkbox" id="v-L" checked /> 각운동량 L</label>
+                <label><input type="checkbox" id="v-tau" checked /> 토크 τ</label>
+                <label><input type="checkbox" id="v-g" checked /> 중력 mg</label>
+                <label><input type="checkbox" id="v-trail" checked /> 축 궤적</label>
+              </div>
+            </fieldset>
+          </div>
+        </div>
+      </section>
+
+      <hr class="grid-rule" />
+
+      <!-- 3. 비교 -->
+      <section class="block" aria-labelledby="h-compare">
+        <h2 id="h-compare">비교 <span class="folio">03 · 근사 vs 수치</span></h2>
+        <p class="lead">회전 속도만 2배로 바꿔 두 실행을 비교하세요. 빠른 회전 근사는 비교용이며 모든 조건의 실제 결과로 표시하지 않습니다. 느린 회전에서는 근사가 어긋날 수 있습니다.</p>
+        <div class="btn-row">
+          <button class="btn" id="btn-save-a" type="button">현재 결과를 실행 A로 저장</button>
+          <button class="btn" id="btn-save-b" type="button">현재 결과를 실행 B로 저장</button>
+          <button class="btn ghost" id="btn-doublespin" type="button">회전 속도 2배 비교 준비</button>
+        </div>
+        <div class="compare-grid">
+          <div class="card" id="card-a"><h3>실행 A <span class="folio">Run 01</span></h3><p class="lead" data-empty>아직 저장된 실행이 없습니다.</p><div data-body></div></div>
+          <div class="card" id="card-b"><h3>실행 B <span class="folio">Run 02</span></h3><p class="lead" data-empty>아직 저장된 실행이 없습니다.</p><div data-body></div></div>
+        </div>
+      </section>
+
+      <hr class="grid-rule" />
+
+      <!-- 4. 기록 -->
+      <section class="block" aria-labelledby="h-record">
+        <h2 id="h-record">기록 <span class="folio">04 · 저장</span></h2>
+        <p class="lead">같은 힘인데 다른 운동이 나타나는 이유를 한두 문장으로 적으세요. 축이 떨리면서 돌아도(너테이션) 실패가 아닙니다. 저장된 기록에는 개인 정보가 포함되지 않습니다.</p>
+        <div class="card">
+          <div class="field">
+            <label for="memo">설명 기록</label>
+            <textarea class="memo" id="memo" placeholder="예: 회전을 빠르게 하자 축이 옆으로 도는 속도가 느려졌다. 토크가 각운동량 방향을 바꾸기 때문이다."></textarea>
+          </div>
+          <div class="btn-row">
+            <button class="btn primary" id="btn-save-record" type="button">기록 저장</button>
+            <button class="btn ghost" id="btn-export" type="button">JSON 내보내기</button>
+          </div>
+          <p class="hint" id="record-status" aria-live="polite">저장된 기록 0개 (이 브라우저에만 저장).</p>
+          <table class="data" id="record-table" hidden>
+            <thead><tr><th scope="col">시간</th><th scope="col">예측</th><th scope="col">조건</th><th scope="col">종료</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site">
+      <p>계산 엔진은 렌더러와 분리된 순수 함수(RK4, Δt=1/2000)이며, 화면 보간은 표시용입니다. WebGL 없이 2D 투영·수치표·시간 그래프로 동일한 상태를 볼 수 있습니다. 전이 과제: 무게중심 거리를 절반으로 줄이면 빠른 회전 근사에서 무엇이 바뀌는지 예측해 보세요.</p>
+      <p class="nums" id="engine-ver">엔진 v0.2.0 · 시나리오 precession-compare/1</p>
+    </footer>
+  </div>
+
+  <dialog id="log-dialog" aria-labelledby="log-h">
+    <h2 id="log-h">업데이트 내역</h2>
+    <div id="log-body"><p>불러오는 중…</p></div>
+    <div class="btn-row"><button class="btn" id="close-log" type="button">닫기</button></div>
+  </dialog>
+
+  <script type="module" src="/src/ui/main.ts"></script>
+</body>
+</html>
