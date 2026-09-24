@@ -51,13 +51,13 @@ export interface RunResult {
 
 /** 엔진·시나리오 버전. 기록 재현용으로 저장된다 (공통 원칙 §4). */
 export const ENGINE_VERSION = "0.2.0";
-export const SCENARIO_VERSION = "precession-compare/1";
+export const SCENARIO_VERSION = "precession-compare/2";
 
 export const LIMITS = {
   massKg: { min: 0.5, max: 2 },
   comDistanceM: { min: 0.05, max: 0.2 },
   tiltDeg: { min: 5, max: 35 },
-  spinRadPerSec: { min: 20, max: 120 },
+  spinRadPerSec: { min: 20, max: 240 },
   durationSec: { min: 1, max: 10 },
   wheelRadiusM: { min: 0.02, max: 0.15 },
   pivotHeightM: { min: 0.02, max: 0.3 }

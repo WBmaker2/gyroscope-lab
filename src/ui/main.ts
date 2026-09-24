@@ -1,8 +1,3 @@
-// main.ts — UI 조합. 의미 구조→토큰→반응형→상태→폴리시 순서.
-// 렌더러·재생·비교·기록은 각 모듈에 있고, 여기서는 흐름만 잇는다.
-// 접근성: 네이티브 컨트롤·visible focus(CSS)·dialog 초점 복귀·오류 role=alert·
-// 캔버스 텍스트 대안(수치표·그래프 요약)·reduced-motion 정적 테두리·터치 44px(CSS).
-
 import { runSimulation, ENGINE_VERSION, SCENARIO_VERSION } from "../physics/runner";
 import { $ , webGLAvailable } from "./dom";
 import { readParams, syncRangeInputs, pairNumericRange, validateToUI, PARAM_KEYS } from "./paramform";
@@ -27,6 +22,7 @@ import {
 } from "./playback";
 import { drawSim, type SimFlags } from "./sim2d";
 import { drawTimeGraph as renderTimeGraph } from "./timegraph";
+import { showNumericalError as showNumericalErrorUI } from "./errors";
 import type { CameraView } from "./scene3d";
 
 /** 3D 모듈은 처음 누를 때만 내려받는다. 2D만 쓰면 three.js를 받지 않는다. */
@@ -41,7 +37,7 @@ async function ensureScene3d(): Promise<boolean> {
     return false;
   }
 }
-import { renderCompareCard, saveCompareSlot } from "./compare";
+import { bindComparisonControls } from "./compare";
 import {
   appendRecord,
   buildRecord,
@@ -63,18 +59,35 @@ const STATE_LABEL: Record<UiState, string> = {
   groundContact: "바닥 접촉 종료", numericalError: "수치 오류"
 };
 
-const LOG_FALLBACK = `## 2026-09-23
-- 팽이 연구소 P0 첫 화면을 만들었다. 예측→실험→비교→기록 흐름과 2D 투영·수치표를 제공한다.
-- 계산 엔진(RK4, Δt=1/2000)과 화면을 분리했고, 빠른 회전 근사는 비교용으로만 표시한다.`;
+const LOG_FALLBACK = `## 2026-09-24
+- 예측을 고른 뒤 실험하고, 완료 후 비교 단계로 이동할 수 있다.
+- 2배 비교는 정확한 값을 유지하며, 범위를 넘으면 값을 자르지 않고 안내한다.
+- 세차·토크·각운동량을 먼저 설명하고 계산 세부정보는 펼쳐서 확인한다.
+- 실행 중 키보드 초점을 정지 버튼에 두고 상태 안내를 간결하게 했다.
+- 3D 불러오기 상태와 예상·관찰·이유 기록 문장 틀을 추가했다.
+- 엔진 v${ENGINE_VERSION} · 시나리오 ${SCENARIO_VERSION}`;
 
 function setUiState(s: UiState, text: string) {
+  const active = document.activeElement;
+  const runButton = $("btn-run") as HTMLButtonElement;
+  const pauseButton = $("btn-pause") as HTMLButtonElement;
+  if (s === "running" && active === runButton) {
+    pauseButton.disabled = false;
+    pauseButton.focus();
+  }
+  const completionWrap = $("completion-link-wrap") as HTMLElement;
+  completionWrap.hidden = s !== "completed";
+  for (const id of ["btn-run", "btn-start-top", "completion-link", "btn-save-a", "btn-save-b", "btn-doublespin"]) {
+    $(id).classList.remove("gi-pulse");
+  }
+  if (s === "completed") $("completion-link").classList.add("gi-pulse");
   uiState = s;
   const line = $("status");
   line.dataset.state = s;
   $("status-badge").textContent = STATE_LABEL[s];
   $("status-text").textContent = text;
-  ($("btn-pause") as HTMLButtonElement).disabled = s !== "running";
-  ($("btn-run") as HTMLButtonElement).disabled = s === "running";
+  pauseButton.disabled = s !== "running";
+  runButton.disabled = s === "running";
   // gi-pulse는 다음 행동 하나에만: 준비 상태에서만 실행 버튼 강조.
   for (const id of ["btn-run", "btn-start-top"]) {
     $(id).classList.remove("gi-pulse");
@@ -195,6 +208,7 @@ function playLoop(last: number) {
 }
 
 function doRun(fromStep = false) {
+  if (!requirePrediction()) return;
   const p = readParams();
   if (!validateToUI(p)) {
     setUiState("ready", "입력 범위를 확인하세요.");
@@ -217,18 +231,18 @@ function doRun(fromStep = false) {
     return;
   }
   if (fromStep || reducedMotion) {
-    setUiState("paused", `정지됨 · t=${current.samples[getPlayIndex()].t.toFixed(2)} s — 한 단계씩 진행하세요.`);
+    setUiState("paused", `t=${current.samples[getPlayIndex()].t.toFixed(2)} s — 한 단계씩 진행하세요.`);
     return;
   }
   setPlaying(true);
-  setUiState("running", `실행 중 · t=0.00 s / ${p.durationSec} s`);
+  setUiState("running", `t=0.00 s / ${p.durationSec} s`);
   setRaf(requestAnimationFrame((t) => playLoop(t)));
   // 상태 텍스트를 주기적으로 갱신 (매 프레임이 아닌 250ms 간격).
   const tick = () => {
     const c = getRun();
     if (uiState !== "running" || !c) return;
     const s = c.samples[getPlayIndex()];
-    $("status-text").textContent = `실행 중 · t=${s.t.toFixed(2)} s / ${c.parameters.durationSec} s`;
+    $("status-text").textContent = `t=${s.t.toFixed(2)} s / ${c.parameters.durationSec} s`;
     if (uiState === "running") setTimeout(tick, 250);
   };
   setTimeout(tick, 250);
@@ -243,36 +257,35 @@ function onTerminated(userPaused: boolean) {
   }
   const s = current.samples[getPlayIndex()];
   if (userPaused) {
-    setUiState("paused", `정지됨 · t=${s.t.toFixed(2)} s — 한 단계씩 진행할 수 있습니다.`);
+    setUiState("paused", `t=${s.t.toFixed(2)} s — 한 단계씩 진행할 수 있습니다.`);
     return;
   }
   if (current.terminationReason === "tiltLimit") {
-    setUiState("limitReached", `축이 60°를 넘겨 종료 · t=${s.t.toFixed(2)} s — 조건을 낮추고 다시 실행하세요.`);
+    setUiState("limitReached", `축이 60°를 넘겨 t=${s.t.toFixed(2)} s에 멈췄습니다. 조건을 낮추고 다시 실행하세요.`);
   } else if (current.terminationReason === "groundContact") {
-    setUiState("groundContact", `바닥에 닿아 종료(P1 감지) · t=${s.t.toFixed(2)} s — 닿은 뒤 움직임은 계산하지 않습니다.`);
+    setUiState("groundContact", `t=${s.t.toFixed(2)} s에 바닥에 닿았습니다. 닿은 뒤 움직임은 계산하지 않습니다.`);
   } else {
-    setUiState("completed", `완료 · t=${s.t.toFixed(2)} s — 비교 탭에 저장할 수 있습니다.`);
+    setUiState("completed", `t=${s.t.toFixed(2)} s까지 실행했습니다.`);
+    ($("completion-link-wrap") as HTMLElement).hidden = false;
+    ($("completion-link") as HTMLAnchorElement).focus();
   }
   refresh();
+}
+
+function requirePrediction(): boolean {
+  const selected = document.querySelector('input[name="prediction"]:checked');
+  if (selected) return true;
+  setUiState("ready", "예측을 하나 선택한 뒤 실험을 시작하세요.");
+  const first = document.querySelector<HTMLInputElement>('input[name="prediction"]');
+  first?.focus();
+  first?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
+  return false;
 }
 
 function showNumericalError(title: string, detail: string) {
   stopLoop();
   setUiState("numericalError", `${title} (${detail})`);
-  const box = $("error-box");
-  box.innerHTML = "";
-  const div = document.createElement("div");
-  div.className = "alert";
-  div.setAttribute("role", "alert");
-  const h = document.createElement("h3");
-  h.textContent = "수치 오류 — 실패를 성공으로 표시하지 않습니다";
-  const pEl = document.createElement("p");
-  pEl.textContent = `${title} ${detail}`;
-  const btn = document.createElement("button");
-  btn.className = "btn";
-  btn.type = "button";
-  btn.textContent = "초기값으로 복원";
-  btn.addEventListener("click", () => {
+  showNumericalErrorUI(title, detail, () => {
     ($("in-mass") as HTMLInputElement).value = "1";
     ($("in-dist") as HTMLInputElement).value = "0.1";
     ($("in-spin") as HTMLInputElement).value = "100";
@@ -286,13 +299,11 @@ function showNumericalError(title: string, detail: string) {
       ($(id) as HTMLInputElement).disabled = true;
     }
     syncRangeInputs();
-    box.innerHTML = "";
+    $("error-box").innerHTML = "";
     clearRun();
     draw();
     setUiState("ready", "초기값으로 복원했습니다. 다시 실행하세요.");
   });
-  div.append(h, pEl, btn);
-  box.appendChild(div);
   refresh();
 }
 
@@ -304,20 +315,28 @@ async function onViewButton(b: HTMLButtonElement): Promise<void> {
       // 3D를 다시 누르면 2D 정면으로 돌아온다.
       setView("front");
       cameraView = "front";
+      ($("three-status") as HTMLElement).textContent = "2D 보기로 돌아왔습니다.";
     } else if (webglDead || !webGLAvailable()) {
       // 3D 불가: 2D 정면에 머물고 이유를 알린다.
       webglDead = true;
       setView("front");
       ($("webgl-note") as HTMLElement).hidden = false;
+      const threeStatus = $("three-status") as HTMLElement;
+      threeStatus.hidden = false;
+      threeStatus.textContent = "3D를 사용할 수 없어 2D 보기로 표시합니다.";
     } else {
-      $("status-text").textContent = "3D 준비 중…";
+      const threeStatus = $("three-status") as HTMLElement;
+      threeStatus.hidden = false;
+      threeStatus.textContent = "3D 보기를 불러오는 중입니다.";
       const ok = await ensureScene3d();
       if (!ok) {
         webglDead = true;
         setView("front");
         ($("webgl-note") as HTMLElement).hidden = false;
+        threeStatus.textContent = "3D를 불러오지 못했습니다. 2D 보기로 표시합니다.";
       } else {
         setView("3d");
+        threeStatus.textContent = "3D 보기를 불러왔습니다.";
       }
     }
   } else if (getView() === "3d") {
@@ -364,6 +383,7 @@ function init() {
   });
   $("btn-pause").addEventListener("click", () => onTerminated(true));
   $("btn-step").addEventListener("click", () => {
+    if (!requirePrediction()) return;
     const current = getRun();
     if (!current) {
       doRun(true);
@@ -376,7 +396,7 @@ function init() {
     if (getPlayIndex() >= current.samples.length - 1) {
       onTerminated(false);
     } else {
-      setUiState("paused", `정지됨 · t=${s.t.toFixed(2)} s`);
+      setUiState("paused", `t=${s.t.toFixed(2)} s — 다음 단계로 진행할 수 있습니다.`);
     }
   });
   $("btn-reset").addEventListener("click", () => {
@@ -393,31 +413,7 @@ function init() {
     if (document.hidden && uiState === "running") onTerminated(true);
   });
 
-  const needRun = () => {
-    if (!getRun()) {
-      $("status-text").textContent = "먼저 실행하세요. 저장할 결과가 없습니다.";
-      return null;
-    }
-    return getRun()!;
-  };
-  $("btn-save-a").addEventListener("click", () => {
-    const r = needRun();
-    if (r) saveCompareSlot("A", r, $("card-a"));
-  });
-  $("btn-save-b").addEventListener("click", () => {
-    const r = needRun();
-    if (r) saveCompareSlot("B", r, $("card-b"));
-  });
-  $("btn-doublespin").addEventListener("click", () => {
-    const spin = $(`in-spin`) as HTMLInputElement;
-    const v = Number(spin.value);
-    if (Number.isFinite(v)) {
-      spin.value = String(Math.min(120, v * 2));
-      syncRangeInputs();
-      $("status-text").textContent = `회전 속도를 ${(spin.value as string)} rad/s로 바꿨습니다. 실행 후 B에 저장하세요.`;
-      ($("btn-run") as HTMLButtonElement).focus();
-    }
-  });
+  bindComparisonControls((message) => setUiState("ready", message));
 
   $("btn-save-record").addEventListener("click", () => {
     const current = getRun();
